@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 10 以降、依存パッケージの postinstall スクリプトはデフォルトで実行されない。
+# postinstall は任意のコードを実行できるため、サプライチェーン攻撃の入口になりやすい。
+# 必要なものだけをここで明示的に許可する。
+#
+# esbuild: Vite と tsx が内部で使うバンドラ。
+#          プラットフォーム別のネイティブバイナリを postinstall で配置するため、
+#          許可しないと vite も tsx も起動しない。
+allowBuilds:
+  esbuild: true
