@@ -16,14 +16,14 @@
 |---|---|---|---|
 | 00 | 仕様設計 | 完了 | [log](logs/step-00-spec-design.md) |
 | 01 | モノレポ基盤。pnpm workspaces / Vite / Hono の疎通、Vite proxy、RPC の型が web に通ることの確認 | 未着手 | |
-| 02 | DB 基盤。Docker Compose の Postgres / Drizzle / `users` / マイグレーション / seed | 未着手 | |
+| 02 | DB 基盤。Docker Compose の Postgres / Drizzle / `users` + `work_schedules` / マイグレーション / seed | 未着手 | |
 | 03 | テスト基盤。Vitest / `hono/testing` / テスト用 DB の作り直し / GitHub Actions の骨組み | 未着手 | |
 | 04 | 認証 API。セッション発行・検証、`login` / `logout` / `me`、`requireAuth` ミドルウェア | 未着手 | |
 | 05 | ログイン画面。ルーティング / TanStack Query / RPC クライアント / 認証ガード | 未着手 | |
 | 06 | 状態機械を `packages/shared` に実装。純粋関数 + テスト | 未着手 | |
 | 07 | 打刻 API。`POST /api/time-entries`、状態遷移バリデーション、二重打刻防止 | 未着手 | |
 | 08 | 打刻画面。現在の状態表示、遷移可能なボタンのみ出す、未完了勤務の警告 | 未着手 | |
-| 09 | 勤怠取得 API。日次集計ロジック、月次一覧、日次詳細、`incomplete` の導出 | 未着手 | |
+| 09 | 勤怠取得 API。日次集計ロジック、`getScheduleFor()`、月次一覧、日次詳細、`incomplete` の導出 | 未着手 | |
 | 10 | 月次一覧・日次詳細画面 ← **Phase 1 完了** | 未着手 | |
 
 ## Phase 2 — 申請と承認
@@ -34,7 +34,7 @@
 | 12 | 修正申請 API。作成 / 一覧 / 取消 | 未着手 | |
 | 13 | 承認 API。トランザクション適用 / 楽観ロック / 自己承認禁止 | 未着手 | |
 | 14 | 申請画面。日次詳細からの申請フォーム、自分の申請一覧 | 未着手 | |
-| 15 | 管理者画面。承認待ち一覧、メンバー勤怠閲覧、代理修正 ← **Phase 2 完了** | 未着手 | |
+| 15 | 管理者画面。承認待ち一覧、メンバー勤怠閲覧、代理修正、所定労働時間の変更 ← **Phase 2 完了** | 未着手 | |
 
 ## Phase 3 — 集計と運用
 

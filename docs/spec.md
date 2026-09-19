@@ -46,6 +46,7 @@ Phase 1 の時点でも DB スキーマは Phase 2 を前提に設計してお�
 
 ```
 User ──< TimeEntry (打刻イベント)
+  ├──< WorkSchedule (勤務体系の適用履歴)
   └──< Request (申請) ──< CorrectionRequestDetail ──< CorrectionRequestItem
                        └─< LeaveRequestDetail            (Phase 3)
 DailyRecord (User × 勤務日)
@@ -123,13 +124,32 @@ clock_in があり、clock_out がなく、work_date < 今日 → incomplete
 
 ### 所定労働時間
 
-Phase 1 〜 2 は `users` に直接持つ。ただし集計ロジックからは必ず
-**`getScheduleFor(userId, workDate)` 越しに引く**こと。
+所定労働時間は「現在の値」ではなく **その日に適用されていた値** を引く。
+`users` に現在値を1つだけ持つ設計はしない。
 
-実務では所定労働時間は勤務体系マスタに紐づき、さらに適用開始日つきの履歴になる
-（途中で勤務体系が変わると過去の集計が狂うため）。
-関数越しにしておけば、Phase 3 で `work_patterns` テーブルへ差し替えても
-呼び出し側を触らずに済む。
+管理画面から変更できるようにすると、単純な UPDATE では **過去の勤怠の集計が書き換わる**。
+
+```
+9月の所定 9:00-18:00 (8h) → 9/15 に 10h 勤務 → 残業 2h
+10/1 から 9:00-17:30 (7.5h) に変更（users を UPDATE した場合）
+  → 9月の勤怠を開くと 9/15 の残業が 2.5h に化ける
+```
+
+そのため `work_schedules` に **適用開始日つきの履歴** として積む。
+集計ロジックからは必ず `getScheduleFor(userId, workDate)` 越しに引く。
+
+```sql
+SELECT * FROM work_schedules
+ WHERE user_id = $1 AND effective_from <= $2   -- $2 = work_date
+ ORDER BY effective_from DESC LIMIT 1
+```
+
+- ユーザー作成時に `effective_from = hired_on` の行を必ず1件作る。
+  `getScheduleFor` が値を返せないケースを作らないため
+- `effective_from` には **未来日を指定できる**。「11/1 から適用」の予約が自然にできる
+- **月次一覧では N+1 に注意。** 30日分を1日ずつ引くとクエリが30回走る。
+  月内に関係する履歴行をまとめて取得し、日付への割り当てはメモリ上で行う
+- 履歴行は追加のみを基本とする。誤設定の訂正としてのみ管理者が削除できる
 
 ### 集計（Phase 3）
 
@@ -149,10 +169,22 @@ users
   password_hash   text        NOT NULL          -- argon2id
   name            text        NOT NULL
   role            text        NOT NULL          -- 'employee' | 'admin'
-  scheduled_start time        NOT NULL          -- 所定始業
-  scheduled_end   time        NOT NULL          -- 所定終業
+  hired_on        date        NOT NULL          -- 入社日。初回の勤務体系の適用開始日になる
   created_at      timestamptz NOT NULL
   updated_at      timestamptz NOT NULL
+
+-- 勤務体系の適用履歴。所定労働時間は「その日に適用されていた値」を引く
+work_schedules
+  id              uuid        PK
+  user_id         uuid        FK users NOT NULL
+  effective_from  date        NOT NULL          -- この日から適用
+  scheduled_start time        NOT NULL          -- 所定始業
+  scheduled_end   time        NOT NULL          -- 所定終業
+  created_by      uuid        FK users NOT NULL -- 設定した管理者
+  created_at      timestamptz NOT NULL
+  UNIQUE (user_id, effective_from)
+  INDEX (user_id, effective_from DESC)
+  -- ユーザー作成時に effective_from = hired_on の行を必ず1件作る
 
 -- セッション（Cookie のトークンはハッシュ化して保存）
 sessions
@@ -294,6 +326,10 @@ POST   /api/requests/:id/cancel                申請者本人のみ
 
 GET    /api/admin/members                   admin のみ
 GET    /api/admin/members/:id/attendances   admin のみ
+GET    /api/admin/members/:id/schedules     admin のみ・勤務体系の適用履歴
+POST   /api/admin/members/:id/schedules     admin のみ・適用開始日つきで追加
+DELETE /api/admin/members/:id/schedules/:scheduleId
+                                            admin のみ・誤設定の訂正用
 ```
 
 ### エラー設計
@@ -317,6 +353,7 @@ GET    /api/admin/members/:id/attendances   admin のみ
 | `/requests` | 自分の申請一覧・取消 | 全員 |
 | `/admin/requests` | 承認待ち一覧 → 承認 / 却下（自分の申請は操作不可） | admin |
 | `/admin/members` | メンバー一覧 → 各人の月次閲覧・代理修正 | admin |
+| `/admin/members/:id/schedules` | 所定労働時間の変更。適用開始日を指定して追加し、履歴を一覧表示 | admin |
 
 `admin` も打刻するため、`/` `/attendances` `/requests` は全員が使う。
 `/admin/*` のみロールで制限する。
