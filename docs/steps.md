@@ -10,6 +10,12 @@
   STEP を終えるたびに「動いて目に見える」状態を作る
 - 完了の定義は「テストが通り、ブラウザで動作を確認できること」
 
+## 環境整備（アプリ本体以外）
+
+| # | 内容 | 状態 | ログ |
+|---|---|---|---|
+| setup-01 | Claude Code のセキュリティ設定。`permissions` / PreToolUse フック / `.gitignore` | 完了 | [log](logs/setup-01-claude-security.md) |
+
 ## Phase 1 — 打刻と閲覧
 
 | STEP | 内容 | 状態 | ログ |
