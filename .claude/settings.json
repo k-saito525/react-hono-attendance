@@ -2,28 +2,12 @@
   "permissions": {
     "blockReadsOutsideWorkingDirectories": true,
     "deny": [
-      "Read(.env)",
-      "Read(.env.local)",
-      "Read(.env.development)",
-      "Read(.env.production)",
-      "Read(.env.test)",
-      "Read(**/.env)",
-      "Read(**/.env.local)",
-      "Read(**/.env.development)",
-      "Read(**/.env.production)",
-      "Read(**/.env.test)",
       "Read(**/*.pem)",
       "Read(**/*.key)",
       "Read(**/*.p12)",
       "Read(**/*.pfx)",
       "Read(**/id_rsa)",
-      "Read(**/id_ed25519)",
-      "Edit(.env)",
-      "Edit(**/.env)",
-      "Edit(**/.env.local)",
-      "Edit(**/.env.development)",
-      "Edit(**/.env.production)",
-      "Edit(**/.env.test)"
+      "Read(**/id_ed25519)"
     ]
   },
   "hooks": {

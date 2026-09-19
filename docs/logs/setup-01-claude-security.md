@@ -102,10 +102,56 @@ stdin に `{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}` を流す�
 
 ## 次への申し送り
 
-- **`.env` は私が作れない**（`Edit(.env)` を deny したため）。
-  STEP 02 で `.env.example` を用意するので、`cp .env.example .env` は手動で実行してもらう
+- `.env` の扱いは下の追記で変更した（編集可能にした）
 - フックの確認・無効化は `/hooks` から行える
 - 厳格レベル（`git reset --hard`、`git clean -fd`、main への直接 push の禁止）に
   上げたくなったら [guard-bash.sh](../../.claude/hooks/guard-bash.sh) にチェックを追加する
 - `.claude/settings.local.json` は個人の上書き用として `.gitignore` 済み。
   一時的にルールを緩めたい場合はそちらに書く
+
+---
+
+# 追記: `.env` を編集可能にした（2026-09-20）
+
+## 判断の変更
+
+- **元の判断**: `.env` は Read も Edit も deny する。認証情報を書くファイルに Claude を触らせない
+- **覆した理由**: 開発の手数が増える。`.env` を用意・更新するたびに手動作業が挟まり、
+  STEP 02 以降のたびに止まることになる
+- **新しい判断**: `.env` 系の deny をすべて外す。
+  鍵・証明書（`*.pem` `*.key` `id_rsa` など）の deny と
+  `blockReadsOutsideWorkingDirectories` は維持する
+
+## 判明した仕様
+
+**`Read(path)` の deny は書き込みも弾く。「書けるが読めない」状態は作れない。**
+
+最初は `Edit(...)` の deny だけを外して Write を試したが、こう拒否された。
+
+```
+File is covered by a Read deny rule in your permission settings and cannot be written.
+```
+
+`Edit(path)` が Write / Edit / NotebookEdit を指す一方で、`Read(path)` の deny は
+読み書き両方を塞ぐ。editable にするには Read の deny も外すしかない。
+
+## 残っている防御
+
+`.env` の中身は Claude のコンテキストに入るようになったが、
+**git に入る経路は塞がれたまま**（いずれも設定後に動作確認済み）。
+
+| 層 | 状態 |
+|---|---|
+| `.gitignore` | `.env` を無視する |
+| `guard-git.sh` | `git add .env` を deny する |
+| `permissions.deny` | 鍵・証明書ファイルは引き続き読み取り禁止 |
+
+## 気づき
+
+**セキュリティ設定は「全部締める」ではなく「どの経路を最後まで塞ぐか」で考える。**
+
+`.env` を読めなくすること（コンテキストに入れない）と
+`.env` をコミットさせないこと（履歴に永久に残さない）は、別の脅威への対策になっている。
+被害が回復不能なのは後者で、前者を緩めても後者が残っていれば実害は大きく変わらない。
+
+締めた数ではなく、**回復不能な経路が塞がっているか**で設定の良し悪しを判断する。
