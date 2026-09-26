@@ -1,9 +1,11 @@
-import type { Health } from '@attendance/shared'
 import { useEffect, useState } from 'react'
 import { client } from './lib/api'
 
+/** API のレスポンスから型を借りる。web 側で型を再定義しない */
+type User = Awaited<ReturnType<Awaited<ReturnType<typeof client.api.users.$get>>['json']>>[number]
+
 export function App() {
-  const [health, setHealth] = useState<Health | null>(null)
+  const [users, setUsers] = useState<User[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -11,13 +13,9 @@ export function App() {
 
     const load = async () => {
       try {
-        const res = await client.api.health.$get()
-
-        // data の型は API の定義から推論される。手で型注釈を書いていないのに
-        // Health として扱えるのが、Hono RPC による型共有が効いている証拠。
+        const res = await client.api.users.$get()
         const data = await res.json()
-
-        if (!cancelled) setHealth(data)
+        if (!cancelled) setUsers(data)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       }
@@ -33,37 +31,51 @@ export function App() {
     <main
       style={{
         fontFamily: 'system-ui, sans-serif',
-        maxWidth: '40rem',
+        maxWidth: '48rem',
         margin: '4rem auto',
         padding: '0 1rem',
         lineHeight: 1.7,
       }}
     >
       <h1 style={{ fontSize: '1.25rem' }}>勤怠管理アプリ</h1>
-      <p style={{ color: '#666' }}>STEP 01 — web と api の疎通確認</p>
+      <p style={{ color: '#666' }}>STEP 02 — DB に入れた seed データの表示</p>
 
       {error && <p style={{ color: '#c00' }}>API への接続に失敗しました: {error}</p>}
+      {!error && !users && <p style={{ color: '#666' }}>読み込み中…</p>}
 
-      {!error && !health && <p style={{ color: '#666' }}>読み込み中…</p>}
-
-      {health && (
-        <dl
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'auto 1fr',
-            gap: '0.25rem 1.5rem',
-            border: '1px solid #ddd',
-            borderRadius: '0.5rem',
-            padding: '1rem 1.25rem',
-          }}
-        >
-          <dt style={{ color: '#666' }}>status</dt>
-          <dd style={{ margin: 0 }}>{health.status}</dd>
-          <dt style={{ color: '#666' }}>service</dt>
-          <dd style={{ margin: 0 }}>{health.service}</dd>
-          <dt style={{ color: '#666' }}>time</dt>
-          <dd style={{ margin: 0 }}>{health.time}</dd>
-        </dl>
+      {users && (
+        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.9rem' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem 0.75rem' }}>名前</th>
+              <th style={{ padding: '0.5rem 0.75rem' }}>メール</th>
+              <th style={{ padding: '0.5rem 0.75rem' }}>権限</th>
+              <th style={{ padding: '0.5rem 0.75rem' }}>入社日</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem 0.75rem' }}>{u.name}</td>
+                <td style={{ padding: '0.5rem 0.75rem', color: '#666' }}>{u.email}</td>
+                <td style={{ padding: '0.5rem 0.75rem' }}>
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '0.1rem 0.5rem',
+                      borderRadius: '999px',
+                      background: u.role === 'admin' ? '#e8f0fe' : '#f1f3f4',
+                      color: u.role === 'admin' ? '#1a5fb4' : '#5f6368',
+                    }}
+                  >
+                    {u.role}
+                  </span>
+                </td>
+                <td style={{ padding: '0.5rem 0.75rem', color: '#666' }}>{u.hiredOn}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </main>
   )
