@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: attendance-db
+    environment:
+      POSTGRES_USER: attendance
+      POSTGRES_PASSWORD: attendance
+      POSTGRES_DB: attendance
+      # DB は UTC で保存する。JST への変換は表示側の責務。
+      # docs/spec.md の「タイムゾーン」を参照。
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # ホスト側は 5433。別プロジェクトの Postgres が 5432 を使っているため、
+      # 衝突を避けてずらしている。コンテナ内部は 5432 のまま。
+      # 左がホスト、右がコンテナ。接続先は .env の DATABASE_URL で 5433 を指す。
+      - "5433:5432"
+    volumes:
+      # Postgres 18 以降はボリュームを /var/lib/postgresql に置く。
+      # 内部でバージョン別のサブディレクトリ（18/docker）にデータを作るため、
+      # pg_upgrade --link がマウント境界をまたがずに済む。
+      # 17 以前の慣習どおり /var/lib/postgresql/data にマウントすると起動に失敗する。
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      # 「コンテナが起動している」ことと「Postgres が接続を受け付けられる」ことは別。
+      # 起動直後は初期化中で接続を拒否するため、これがないと
+      # 直後に流すマイグレーションが不定期に失敗する。
+      test: ["CMD-SHELL", "pg_isready -U attendance -d attendance"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  # 名前付きボリューム。コンテナを作り直してもデータが残る。
+  # 消すと seed のやり直しになるため、docker compose down -v は
+  # .claude/hooks/guard-bash.sh でブロックしている。
+  pgdata:
