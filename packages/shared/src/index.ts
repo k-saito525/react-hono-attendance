@@ -15,3 +15,13 @@ export const healthSchema = z.object({
 })
 
 export type Health = z.infer<typeof healthSchema>
+
+/**
+ * ユーザーの権限。
+ *
+ * role は「権限の追加」として扱う。admin も一般社員と同じように打刻するため、
+ * employee / admin は排他的な役割ではない。
+ * docs/spec.md の「認可」を参照。
+ */
+export const ROLES = ['employee', 'admin'] as const
+export type Role = (typeof ROLES)[number]
