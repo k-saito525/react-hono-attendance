@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/app.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
@@ -27,6 +28,7 @@
     "@types/node": "^26.6.1",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.10",
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.13",
+    "vitest": "^5.0.2"
   }
 }
