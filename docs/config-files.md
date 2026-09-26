@@ -11,23 +11,29 @@ react-hono-attendance/
 ├── pnpm-workspace.yaml       どのディレクトリをワークスペースとして扱うか
 ├── tsconfig.base.json        TypeScript の共通設定（3パッケージが継承）
 ├── biome.json                lint と format
+├── vitest.config.ts          各パッケージのテストを束ねる
 ├── docker-compose.yml        開発用 Postgres のコンテナ定義
 ├── .env.example              環境変数の雛形（.env はこれをコピーして作る）
 ├── .gitignore                git に載せないもの
+├── .github/workflows/ci.yml  push / PR ごとに lint・typecheck・test を実行
 ├── .claude/settings.json     Claude Code の権限とフック
 │
 ├── apps/api/
 │   ├── package.json          api の依存とスクリプト
 │   ├── tsconfig.json         base + Node 環境の設定
+│   ├── vitest.config.ts      テスト用 DB の準備・直列実行
+│   ├── test/                 テストの準備処理・安全装置・テストデータ生成
 │   ├── drizzle.config.ts     マイグレーションの生成・適用の設定
 │   └── drizzle/              生成されたマイグレーション SQL（コミット対象・lint 対象外）
 ├── apps/web/
 │   ├── package.json          web の依存とスクリプト
 │   ├── tsconfig.json         base + ブラウザ環境 + JSX の設定
-│   └── vite.config.ts        開発サーバ・ビルド・proxy
+│   ├── vite.config.ts        開発サーバ・ビルド・proxy
+│   └── vitest.config.ts      vite.config.ts + jsdom
 └── packages/shared/
     ├── package.json          shared の依存
-    └── tsconfig.json         base をそのまま継承
+    ├── tsconfig.json         base をそのまま継承
+    └── vitest.config.ts      素の Node 環境
 ```
 
 | 変えたいこと | 触るファイル |
@@ -41,6 +47,9 @@ react-hono-attendance/
 | DB の接続先・ポート | `.env` の `DATABASE_URL` と `docker-compose.yml` の `ports`（両方揃える） |
 | テーブルを追加・変更したい | `apps/api/src/db/schema.ts` → `db:generate` → 生成 SQL を確認 → `db:migrate` |
 | 環境変数を追加したい | `.env.example` と `apps/api/src/env.ts` のスキーマ（両方） |
+| テストの接続先 DB | `.env` の `TEST_DATABASE_URL`（名前は `_test` で終わること）。CI は `ci.yml` の `env` |
+| テストの環境（Node / jsdom など） | 各パッケージの `vitest.config.ts` |
+| CI で走らせる内容 | `.github/workflows/ci.yml` の `steps` |
 
 ## ルートの `package.json`
 
@@ -103,6 +112,7 @@ pnpm 10 以降、依存パッケージの `postinstall` スクリプトは**デ�
 | `verbatimModuleSyntax` | 型だけの import は `import type` と書かないとエラー | web が api の `AppType` を参照するため。値として import すると **API のコードが web のバンドルに混入する**。規約ではなく型チェックで防ぐ |
 | `noUncheckedIndexedAccess` | `arr[0]` の型が `T \| undefined` になる | 打刻の配列を大量に扱うので、「空配列の先頭を見て落ちる」事故を型で潰す |
 | `moduleResolution: "bundler"` | 拡張子なしの import が書ける | Vite と tsx が解決する前提 |
+| `allowImportingTsExtensions` | `import './x.ts'` と拡張子付きで書ける | 設定ファイル（`vitest.config.ts`）の import に必要。Vite の設定読み込みは将来ネイティブ方式になり、拡張子の明示を求める。`noEmit` と組み合わせたときだけ有効にできる |
 | `noEmit` | tsc は型チェック専用 | 実際の変換は Vite と tsx がやる |
 | `isolatedModules` | ファイル単位で変換可能であることを保証 | Vite / esbuild の動作前提 |
 | `skipLibCheck` | `node_modules` の型定義を検査しない | 型チェックが大幅に速くなる |
@@ -131,6 +141,15 @@ Vite と tsx は TS をそのまま解決できるので、これで**開発中�
 
 ビルド成果物を経由する方式（project references）も選べるが、
 ビルド順序の管理が必要になり、変更が即座に反映されない。この規模では割に合わない。
+
+api だけは `./src/app.ts` を指している（`index.ts` ではない）。
+`index.ts` は import しただけでサーバが起動するため、
+型を読みたい web や、アプリを直接叩きたいテストからは `app.ts` を参照させる。
+
+```
+apps/api/src/app.ts     アプリの定義と AppType（外から import されるのはこちら）
+apps/api/src/index.ts   serve() するだけ（pnpm dev で起動するのはこちら）
+```
 
 ### `workspace:*`
 
@@ -247,6 +266,12 @@ cp .env.example .env
 値の検証は `apps/api/src/env.ts` が起動時に Zod で行う。
 `DATABASE_URL` が空なら、DB に接続しようとした瞬間ではなく**起動した瞬間に**落ちる。
 
+| キー | 用途 |
+|---|---|
+| `DATABASE_URL` | 開発用 DB（`attendance`） |
+| `TEST_DATABASE_URL` | テスト用 DB（`attendance_test`）。**テストのたびに作り直される**。名前が `_test` で終わらないとテストが起動を拒否する |
+| `PORT` | API サーバのポート |
+
 ## `apps/api/drizzle.config.ts`
 
 drizzle-kit（マイグレーションの生成・適用ツール）の設定。
@@ -270,6 +295,77 @@ casing: 'snake_case',           // TS の camelCase を DB の snake_case に対
 
 **生成された SQL は必ず目で確認する。** drizzle-kit が知り得ないことがあるため。
 実際に `citext` 型を使ったとき、`CREATE EXTENSION citext` は生成されず、手で足している。
+
+## `vitest.config.ts`（ルートと各パッケージ）
+
+テストの設定。**ルートは束ねるだけ、中身は各パッケージ**に置く。
+
+```
+vitest.config.ts                  projects: ['apps/*', 'packages/*'] … 各パッケージを登録するだけ
+├── packages/shared/…             environment: node
+├── apps/web/…                    vite.config.ts を継承 + environment: jsdom
+└── apps/api/…                    environment: node + テスト用 DB の準備 + 直列実行
+```
+
+分けているのは、パッケージごとに実行環境が違うから。
+shared は DOM も DB もない素の Node、web はブラウザの DOM を再現する jsdom、
+api は Node に加えてテスト用 DB が要る。
+
+| コマンド | 内容 |
+|---|---|
+| `pnpm test` | 全パッケージのテストを1回走らせる |
+| `pnpm test:watch` | ファイルの変更を監視して再実行する |
+| `pnpm -F @attendance/api test` | api だけ |
+
+### `apps/api/vitest.config.ts` の意図のある設定
+
+| 設定 | 理由 |
+|---|---|
+| `globalSetup: ['./test/global-setup.ts']` | テスト全体の開始時に1回、テスト用 DB を DROP → CREATE してマイグレーションを流す。**マイグレーションが毎回まっさらな DB に適用される**ので、壊れたマイグレーションにテストで気づける |
+| `setupFiles: ['./test/setup.ts']` | 各テストの前に public スキーマの全テーブルを TRUNCATE する。テーブル名はカタログから引くので、テーブルを増やしても書き足し不要 |
+| `env: { DATABASE_URL: ... }` | アプリのコードが読む接続先をテスト用に差し替える。`env.ts` の `loadEnvFile()` は**既存の環境変数を上書きしない**ので、ここで入れた値が勝つ |
+| `fileParallelism: false` | 全テストが同じ DB を TRUNCATE し合うので、ファイル間で並列に走らせない |
+
+### 開発用 DB を消さないための安全装置（`apps/api/test/db-guard.ts`）
+
+テストの準備処理は DB を作り直すので、接続先を間違えると開発データが消える。
+`.claude/hooks/guard-bash.sh` は **Claude が打つコマンドしか見ておらず**、
+`pnpm test` の中で実行される SQL は防げない。そこで、
+**DB 名が `_test` で終わらなければテストの起動そのものを拒否する。**
+
+チェックは2か所で行う。
+
+```
+global-setup.ts   TEST_DATABASE_URL を確認してから DROP / CREATE する
+setup.ts          アプリの env.DATABASE_URL を確認してから TRUNCATE する
+```
+
+2つは接続先を**別の経路で**決めている。前者だけを確認すると、
+差し替えに失敗したときに「テスト用 DB を作り直したのに、開発用 DB を TRUNCATE する」事故になる。
+
+### `apps/web/vitest.config.ts`
+
+`vite.config.ts` を `mergeConfig` で土台にしている。
+React のプラグインなど、開発時と同じ変換をテストでも使うため。
+
+相対 import を `'./vite.config.ts'` と拡張子付きで書いているのは、
+Vite の設定読み込みが将来ネイティブ方式になり、拡張子の明示を求めるため（警告が出る）。
+
+## `.github/workflows/ci.yml`
+
+`main` への push と、すべての PR で lint → typecheck → test を実行する。
+
+| 設定 | 理由 |
+|---|---|
+| `permissions: contents: read` | ワークフローに与える権限を読み取りだけに絞る。依存パッケージが乗っ取られても、リポジトリへの書き込みはできない |
+| `concurrency` + `cancel-in-progress` | 同じブランチへの push が続いたら、古い実行を止めて最新だけを走らせる |
+| `services: postgres` | ローカルと同じ Postgres 18 を立てる。ホスト側ポートもローカルに合わせて 5433 |
+| `env: TEST_DATABASE_URL` | CI には `.env` が無いので、テストの接続先を環境変数で渡す |
+| `pnpm/action-setup`（バージョン指定なし） | `package.json` の `packageManager` を読んで、ローカルと同じ pnpm を入れる |
+| `pnpm install --frozen-lockfile` | lockfile と `package.json` が食い違っていたら失敗させる。CI で勝手に lockfile を更新しない |
+
+Action のバージョン（`@v7` など）は、書く前に各リポジトリの最新リリースを確認して決めた。
+記憶で書くと古いメジャーバージョンを指定しやすい。
 
 ## `.gitignore`
 
@@ -317,3 +413,8 @@ Claude Code の権限とフック。詳細は
 | drizzle-orm / drizzle-kit | 0.45.2 / 0.31.10 | STEP 02 |
 | pg (node-postgres) | 8.23.0 | STEP 02 |
 | @node-rs/argon2 | 2.2.1 | STEP 02 |
+| Vitest | 5.0.2 | STEP 03 |
+| jsdom | 30.1.1 | STEP 03 |
+| @testing-library/react / jest-dom | 16.3.3 / 7.0.1 | STEP 03 |
+| actions/checkout / setup-node | v7 / v7 | STEP 03 |
+| pnpm/action-setup | v6 | STEP 03 |

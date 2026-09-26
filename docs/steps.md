@@ -23,7 +23,7 @@
 | 00 | 仕様設計 | 完了 | [log](logs/step-00-spec-design.md) |
 | 01 | モノレポ基盤。pnpm workspaces / Vite / Hono の疎通、Vite proxy、RPC の型が web に通ることの確認 | 完了 | [log](logs/step-01-monorepo.md) |
 | 02 | DB 基盤。Docker Compose の Postgres / Drizzle / `users` + `work_schedules` / マイグレーション / seed | 完了 | [log](logs/step-02-database.md) |
-| 03 | テスト基盤。Vitest / `hono/testing` / テスト用 DB の作り直し / GitHub Actions の骨組み | 未着手 | |
+| 03 | テスト基盤。Vitest / `hono/testing` / テスト用 DB の作り直し / GitHub Actions の骨組み | 完了 | [log](logs/step-03-test-foundation.md) |
 | 04 | 認証 API。セッション発行・検証、`login` / `logout` / `me`、`requireAuth` ミドルウェア | 未着手 | |
 | 05 | ログイン画面。ルーティング / TanStack Query / RPC クライアント / 認証ガード | 未着手 | |
 | 06 | 状態機械を `packages/shared` に実装。純粋関数 + テスト | 未着手 | |

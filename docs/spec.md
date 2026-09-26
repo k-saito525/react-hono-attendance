@@ -384,8 +384,8 @@ DELETE /api/admin/members/:id/schedules/:scheduleId
 | 対象 | 方法 |
 |---|---|
 | `packages/shared` | 状態機械・集計ロジックを純粋関数として Vitest でテスト |
-| `apps/api` | `hono/testing` でハンドラを直接叩く。DB はテスト用スキーマを都度作り直す |
-| `apps/web` | Testing Library + MSW。MSW のハンドラは shared の型で縛る |
+| `apps/api` | `hono/testing` でハンドラを直接叩く。テスト開始時にテスト用 DB（名前は `_test` で終わる）を作り直してマイグレーションを流し、各テストの前に全テーブルを TRUNCATE する。DB を使うテストはファイル間で直列に実行する |
+| `apps/web` | Testing Library + jsdom。API のモックは MSW（STEP 05 で導入）。MSW のハンドラは API の型で縛る |
 | CI | GitHub Actions で lint / typecheck / test |
 
 ## 未決事項
