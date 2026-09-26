@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同じブランチへの push が続いたら、古い実行を止めて最新だけを走らせる
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ワークフローに与える権限を読み取りだけに絞る。
+# 依存パッケージが乗っ取られても、リポジトリへの書き込みはできない。
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # ローカルの docker-compose.yml と同じ Postgres 18 を立てる
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: attendance
+          POSTGRES_PASSWORD: attendance
+          POSTGRES_DB: attendance
+          TZ: UTC
+          PGTZ: UTC
+        ports:
+          # ローカルに合わせてホスト側は 5433
+          - 5433:5432
+        # 接続を受け付けられるまで、後続のステップを待たせる
+        options: >-
+          --health-cmd "pg_isready -U attendance -d attendance"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # CI には .env が無いので、テストが読む接続先を環境変数で渡す
+      TEST_DATABASE_URL: postgres://attendance:attendance@localhost:5433/attendance_test
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # package.json の packageManager（pnpm@12.4.2）を読んで同じバージョンを入れる
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # lockfile と package.json が食い違っていたら失敗させる（勝手に更新しない）
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
