@@ -161,6 +161,15 @@ SELECT * FROM work_schedules
 
 ## DB スキーマ
 
+共通方針:
+
+- **主キーは UUID v7**（`DEFAULT uuidv7()`、Postgres 18 の組み込み関数）。
+  連番は ID が URL に出たときに件数を推測されるため避ける。
+  v4 ではなく v7 にするのは、時刻順で単調増加し B-tree への挿入が局所化するため
+- **列挙値は enum 型ではなく `text` + `CHECK` 制約**。enum は値の追加・削除が硬い
+- **時刻の型は概念で使い分ける**。絶対時刻は `timestamptz`、暦日は `date`、
+  毎日繰り返す壁時計の時刻（所定始業など）は `time`
+
 ```sql
 -- ユーザー
 users
