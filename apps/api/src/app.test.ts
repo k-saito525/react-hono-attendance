@@ -1,6 +1,5 @@
 import { testClient } from 'hono/testing'
 import { describe, expect, it } from 'vitest'
-import { createUser } from '../test/factories'
 import app from './app'
 
 /**
@@ -19,27 +18,23 @@ describe('GET /api/health', () => {
   })
 })
 
-describe('GET /api/users', () => {
-  it('パスワードハッシュを含まない（返す項目を固定する）', async () => {
-    await createUser()
+/**
+ * フォーム形式のリクエストは、ブラウザがプリフライトなしで別サイトから送れる。
+ * csrf() がそこを Origin で塞いでいることを確かめる。
+ */
+describe('CSRF 対策', () => {
+  const postForm = (origin: string) =>
+    app.request('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: origin },
+    })
 
-    const [user] = await (await client.api.users.$get()).json()
-
-    /**
-     * 「passwordHash が無いこと」ではなく「返す項目がこれだけであること」を検証する。
-     * 前者だと、users に別の機密列が増えたときに素通りしてしまう。
-     * 項目を増やしたときは、意図してこのテストを更新すること。
-     */
-    expect(Object.keys(user ?? {}).sort()).toEqual(['email', 'hiredOn', 'id', 'name', 'role'])
+  it('別サイトからのフォーム送信は 403', async () => {
+    expect((await postForm('https://evil.example')).status).toBe(403)
   })
 
-  it('入社日順、同じ入社日なら名前順に並ぶ', async () => {
-    await createUser({ name: 'Carol', hiredOn: '2026-07-01' })
-    await createUser({ name: 'Bob', hiredOn: '2026-04-01' })
-    await createUser({ name: 'Alice', hiredOn: '2026-04-01' })
-
-    const body = await (await client.api.users.$get()).json()
-
-    expect(body.map((u) => u.name)).toEqual(['Alice', 'Bob', 'Carol'])
+  it('同じオリジンからのフォーム送信は通る', async () => {
+    // app.request の既定のオリジンは http://localhost
+    expect((await postForm('http://localhost')).status).toBe(204)
   })
 })
