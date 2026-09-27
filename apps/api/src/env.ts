@@ -18,6 +18,8 @@ try {
  * DB 接続の瞬間まで設定漏れに気づけないのを避けるため。
  */
 const envSchema = z.object({
+  /** 本番でだけ Cookie に Secure を付けるために使う。Vitest は自動で test を入れる */
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL が設定されていません'),
   PORT: z.coerce.number().int().positive().default(3000),
 })

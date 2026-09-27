@@ -5,6 +5,7 @@ import {
   customType,
   date,
   index,
+  inet,
   pgTable,
   text,
   time,
@@ -94,7 +95,50 @@ export const workSchedules = pgTable(
   ],
 )
 
+/**
+ * ログインセッション。
+ *
+ * id は Cookie に入れたトークンそのものではなく、その SHA-256。
+ * DB が漏れても、ここからログイン中のセッションを乗っ取れないようにするため。
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** アイドル期限。アクセスがあれば延長される */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** 絶対期限。延長されない。超えたら再ログイン */
+    absoluteExpiresAt: timestamp('absolute_expires_at', { withTimezone: true }).notNull(),
+    userAgent: text('user_agent'),
+    /** 取得できた場合のみ。開発時は Vite の proxy 経由なので 127.0.0.1 になる */
+    ip: inet('ip'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  // 「このユーザーのセッションをすべて破棄する」（パスワード変更時など）ための索引
+  (t) => [index('sessions_user_id_idx').on(t.userId)],
+)
+
+/**
+ * API が外に返してよいユーザーの項目。
+ *
+ * /api/auth/me と /api/admin/members の両方がこれを使う。
+ * 返す項目の定義を1か所にまとめ、password_hash の混入を構造的に防ぐ。
+ * 項目を増やすときは、テストの許可リストも意図して更新すること。
+ */
+export const publicUserColumns = {
+  id: users.id,
+  name: users.name,
+  email: users.email,
+  role: users.role,
+  hiredOn: users.hiredOn,
+}
+
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type WorkSchedule = typeof workSchedules.$inferSelect
 export type NewWorkSchedule = typeof workSchedules.$inferInsert
+export type Session = typeof sessions.$inferSelect
+export type PublicUser = Pick<User, keyof typeof publicUserColumns>
