@@ -418,3 +418,4 @@ Claude Code の権限とフック。詳細は
 | @testing-library/react / jest-dom | 16.3.3 / 7.0.1 | STEP 03 |
 | actions/checkout / setup-node | v7 / v7 | STEP 03 |
 | pnpm/action-setup | v6 | STEP 03 |
+| @hono/zod-validator | 0.9.1 | STEP 04 |
