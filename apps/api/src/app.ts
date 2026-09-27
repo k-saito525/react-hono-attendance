@@ -1,8 +1,9 @@
 import { healthSchema } from '@attendance/shared'
-import { asc } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { db } from './db/client'
-import { users } from './db/schema'
+import { csrf } from 'hono/csrf'
+import { HTTPException } from 'hono/http-exception'
+import { adminRoutes } from './routes/admin'
+import { authRoutes } from './routes/auth'
 
 /**
  * アプリの定義。サーバの起動（serve）は index.ts が担当する。
@@ -12,14 +13,20 @@ import { users } from './db/schema'
  * テストが 3000 番ポートを掴んでしまう。
  *
  * ルートは必ずメソッドチェーンで定義すること。
- * Hono の `.get()` は「そのルート情報を型に積んだ新しい型」を返すので、
- *
- *   const app = new Hono()
- *   app.get('/api/health', handler)   // ✖ 戻り値を捨てると AppType に反映されない
- *
- * ルートが増えたら `.get().post()...` と繋ぐか、`app.route()` で合成する。
+ * Hono の `.get()` や `.route()` は「ルート情報を型に積んだ新しい型」を返すので、
+ * 戻り値を捨てると AppType に反映されず、web 側から見えなくなる。
  */
 const app = new Hono()
+  /**
+   * フォーム形式のリクエスト（application/x-www-form-urlencoded など）に対して、
+   * Origin / Sec-Fetch-Site が自分自身かを確認する。
+   *
+   * JSON のリクエストは、別サイトから送るとブラウザがプリフライトを挟むので元々守られている。
+   * 穴になるのはプリフライトなしで送れるフォーム形式だけで、csrf() はそこを塞ぐ。
+   * SameSite=Lax の Cookie と合わせた多層防御。
+   */
+  .use('/api/*', csrf())
+
   .get('/api/health', (c) =>
     c.json(
       healthSchema.parse({
@@ -29,25 +36,18 @@ const app = new Hono()
       }),
     ),
   )
-  .get('/api/users', async (c) => {
-    /**
-     * 列を明示して select する。
-     * テーブル全体を返すと password_hash がレスポンスに載る。
-     * 「除外し忘れ」は気づけないが「含め忘れ」は気づけるので、明示する側が安全。
-     */
-    const rows = await db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        role: users.role,
-        hiredOn: users.hiredOn,
-      })
-      .from(users)
-      .orderBy(asc(users.hiredOn), asc(users.name))
+  .route('/api/auth', authRoutes)
+  .route('/api/admin', adminRoutes)
 
-    return c.json(rows)
-  })
+/**
+ * 想定外のエラーは 500 にし、内部の情報（スタックトレースなど）を返さない。
+ * HTTPException（csrf() の 403 など）は、意図したステータスのまま返す。
+ */
+app.onError((err, c) => {
+  if (err instanceof HTTPException) return err.getResponse()
+  console.error(err)
+  return c.json({ message: 'サーバーでエラーが発生しました' }, 500)
+})
 
 /** web 側が `hc<AppType>` でこの型を参照し、API の入出力型を受け取る。 */
 export type AppType = typeof app
