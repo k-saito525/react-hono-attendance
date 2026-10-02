@@ -1,6 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # api・web・DB にまたがる E2E テスト。どれか1つの配下には置かない
+  - "e2e"
 
 # pnpm 10 以降、依存パッケージの postinstall スクリプトはデフォルトで実行されない。
 # postinstall は任意のコードを実行できるため、サプライチェーン攻撃の入口になりやすい。

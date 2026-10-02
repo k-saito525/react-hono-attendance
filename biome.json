@@ -7,7 +7,13 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!apps/api/drizzle", "!apps/web/src/routeTree.gen.ts"]
+    "includes": [
+      "**",
+      "!apps/api/drizzle",
+      "!apps/web/src/routeTree.gen.ts",
+      "!e2e/playwright-report",
+      "!e2e/test-results"
+    ]
   },
   "formatter": {
     "enabled": true,
