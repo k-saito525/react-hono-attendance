@@ -24,6 +24,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# TanStack Router のプラグインが生成中に使う一時ファイル
+.tanstack/
+
 # --- テスト ---------------------------------------------------------------
 coverage/
 
