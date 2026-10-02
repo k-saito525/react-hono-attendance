@@ -34,10 +34,15 @@ react-hono-attendance/
 │       ├── styles.css        Tailwind CSS の読み込み（1行だけ）
 │       ├── routes/           画面のルート定義。ファイルの置き場所がそのまま URL になる
 │       └── routeTree.gen.ts  routes/ から自動生成される型付きのルート一覧（手で編集しない）
-└── packages/shared/
-    ├── package.json          shared の依存
-    ├── tsconfig.json         base をそのまま継承
-    └── vitest.config.ts      素の Node 環境
+├── packages/shared/
+│   ├── package.json          shared の依存
+│   ├── tsconfig.json         base をそのまま継承
+│   └── vitest.config.ts      素の Node 環境
+└── e2e/
+    ├── playwright.config.ts  E2E の設定。API と web を専用ポートで起動する
+    ├── global-setup.ts       E2E 用 DB の作り直し・マイグレーション・seed
+    ├── db.ts                 E2E 用 DB の接続先と _e2e ガード
+    └── tests/                E2E のテスト
 ```
 
 | 変えたいこと | 触るファイル |
@@ -56,6 +61,8 @@ react-hono-attendance/
 | CI で走らせる内容 | `.github/workflows/ci.yml` の `steps` |
 | 画面を追加したい | `apps/web/src/routes/` にファイルを置く（`routeTree.gen.ts` は自動で更新される） |
 | 見た目を変えたい | 各コンポーネントの `className`（Tailwind のクラス）。全体の土台は `src/styles.css` |
+| E2E を走らせる | `pnpm test:e2e`（事前に `docker compose up -d`）。初回は `pnpm -F @attendance/e2e exec playwright install chromium` |
+| E2E のポート・DB | `e2e/playwright.config.ts`（ポート）と `.env` の `E2E_DATABASE_URL` |
 
 ## ルートの `package.json`
 
@@ -234,6 +241,17 @@ web（`:5173`）に来た `/api` へのリクエストを api（`:3000`）へ転
 CORS 設定と CSRF トークンが芋づる式に必要になる。
 詳細は [spec.md の「オリジン方針」](spec.md) を参照。
 
+### proxy の転送先は `API_ORIGIN` で変えられる（STEP 05b）
+
+```ts
+target: process.env.API_ORIGIN ?? 'http://localhost:3000'
+server:  { port: 5173, proxy }   // pnpm dev
+preview: { port: 4173, proxy }   // vite preview（本番ビルドの配信）
+```
+
+E2E は開発中のサーバとぶつからないよう API を 3100 番で動かし、web の本番ビルドを `vite preview` で配信する。
+そのため転送先を環境変数で差し替えられるようにし、`preview` にも同じ proxy を設定している。
+
 ### プラグイン（STEP 05 で追加）
 
 ```ts
@@ -277,6 +295,36 @@ server.listen({ onUnhandledFrame: 'error' })
 **ハンドラを用意していないリクエストはテストを失敗させる。**
 黙って素通りさせると、「モックしたつもりの API を実は呼んでいない」ことに気づけない。
 MSW v3 で `onUnhandledRequest` から `onUnhandledFrame` に改名された（v2 の書き方は効かない）。
+
+## `e2e/playwright.config.ts`
+
+実際のブラウザで、web・API・DB を通して確かめる E2E テストの設定。
+
+```
+playwright test
+  ├─ webServer: API を起動   （tsx, PORT=3100, DATABASE_URL=E2E 用 DB）
+  ├─ webServer: web を起動   （vite build → vite preview :4173, API_ORIGIN=:3100）
+  ├─ globalSetup: E2E 用 DB を DROP → CREATE → マイグレーション → seed
+  └─ テスト（Chromium）
+```
+
+| 設定 | 理由 |
+|---|---|
+| web は本番ビルド（`vite preview`） | 利用者が実際に受け取るものを確かめる。開発サーバでしか動かない、という不具合を拾える |
+| ポートは web 4173 / API 3100 | 開発中の dev サーバ（5173 / 3000）とぶつからない |
+| `reuseExistingServer: false` | 既に起動しているサーバを使い回さない。別の DB に繋がったサーバを掴むと、E2E 用 DB を作り直しても反映されないため |
+| `retries`（CI のみ 2） | 再試行で通ったテストはレポートに「flaky」と出るので、不安定さは隠れない |
+| `trace: 'on-first-retry'` / `screenshot: 'only-on-failure'` | 失敗したときだけ、操作の記録とスクリーンショットを残す |
+| `forbidOnly`（CI のみ） | `test.only` が残っていたら失敗させる。他のテストを黙って飛ばさないため |
+| ブラウザは Chromium のみ | CI の時間を抑える。他のブラウザは必要になったら足す |
+
+### E2E 用 DB の安全装置（`e2e/db.ts`）
+
+E2E も開始時に DB を作り直すので、**名前が `_e2e` で終わらない DB では起動を拒否する**。
+api のテスト用（`_test`）と名前を分けているのは、両方を同時に流しても互いの DB を作り直し合わないようにするため。
+
+マイグレーションと seed は、api の `db:migrate` / `db:seed` をそのまま呼ぶ。
+開発時と同じ手順を通すことで、その手順自体も E2E で検証される。
 
 ## `docker-compose.yml`
 
@@ -323,6 +371,7 @@ cp .env.example .env
 |---|---|
 | `DATABASE_URL` | 開発用 DB（`attendance`） |
 | `TEST_DATABASE_URL` | テスト用 DB（`attendance_test`）。**テストのたびに作り直される**。名前が `_test` で終わらないとテストが起動を拒否する |
+| `E2E_DATABASE_URL` | E2E 用 DB（`attendance_e2e`）。**E2E のたびに作り直され、seed が入る**。名前が `_e2e` で終わらないと E2E が起動を拒否する |
 | `PORT` | API サーバのポート |
 
 ## `apps/api/drizzle.config.ts`
@@ -417,6 +466,18 @@ Vite の設定読み込みが将来ネイティブ方式になり、拡張子の
 | `pnpm/action-setup`（バージョン指定なし） | `package.json` の `packageManager` を読んで、ローカルと同じ pnpm を入れる |
 | `pnpm install --frozen-lockfile` | lockfile と `package.json` が食い違っていたら失敗させる。CI で勝手に lockfile を更新しない |
 
+### ジョブは2つ（STEP 05b から）
+
+| ジョブ | 内容 |
+|---|---|
+| `check` | lint → typecheck → test（Vitest） |
+| `e2e` | Chromium を入れて Playwright を実行。失敗時はレポートを成果物（artifact）として7日間保存 |
+
+2つは並行して走る。E2E はブラウザの準備に時間がかかるので、直列にすると待ち時間が伸びる。
+
+ブラウザは毎回ダウンロードする（キャッシュしない）。**Playwright の公式がキャッシュを推奨していない**ため。
+復元とダウンロードの時間がほぼ同じで、Linux で必要な OS の依存（`--with-deps`）はキャッシュできない。
+
 Action のバージョン（`@v7` など）は、書く前に各リポジトリの最新リリースを確認して決めた。
 記憶で書くと古いメジャーバージョンを指定しやすい。
 
@@ -477,3 +538,5 @@ Claude Code の権限とフック。詳細は
 | react-hook-form / @hookform/resolvers | 7.89.0 / 5.9.1 | STEP 05 |
 | Tailwind CSS | 4.3.3 | STEP 05 |
 | MSW | 3.0.1 | STEP 05 |
+| Playwright | 1.63.0 | STEP 05b |
+| actions/upload-artifact | v7 | STEP 05b |

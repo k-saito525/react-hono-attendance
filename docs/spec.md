@@ -435,7 +435,7 @@ web 側はステータスを `number` として受けてから分岐すること
 | `packages/shared` | 状態機械・集計ロジックを純粋関数として Vitest でテスト |
 | `apps/api` | `hono/testing` でハンドラを直接叩く。テスト開始時にテスト用 DB（名前は `_test` で終わる）を作り直してマイグレーションを流し、各テストの前に全テーブルを TRUNCATE する。DB を使うテストはファイル間で直列に実行する |
 | `apps/web` | Testing Library + jsdom + MSW。ルーター・認証ガードを含めたアプリ全体を描画して、画面をまたぐ振る舞いを確かめる。MSW のハンドラは API の型で縛り、用意していないリクエストはテストを失敗させる |
-| E2E | Playwright（STEP 05b で導入）。実際のブラウザ・API・DB を通しで確かめる |
+| E2E | Playwright（Chromium）。web の本番ビルド・API・E2E 用 DB（名前は `_e2e` で終わる）を通しで確かめる。画面の操作に加え、Cookie の属性や「画面を通さず API を直接叩いても守られているか」のような、実ブラウザでしか確かめられない性質を対象にする |
 | CI | GitHub Actions で lint / typecheck / test |
 
 ## 未決事項
