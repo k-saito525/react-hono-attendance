@@ -8,7 +8,8 @@ React(TS) / Hono の学習を目的とした勤怠管理アプリ。
 
 ```
 apps/
-  web/        React + Vite + TypeScript + TanStack Query + react-hook-form
+  web/        React + Vite + TypeScript + TanStack Router + TanStack Query
+              + react-hook-form + Tailwind CSS
   api/        Hono + @hono/node-server + Drizzle ORM
 packages/
   shared/     Zod スキーマ / 状態機械 / ドメイン型（web・api 双方から参照）
@@ -379,6 +380,22 @@ web 側はステータスを `number` として受けてから分岐すること
 `admin` も打刻するため、`/` `/attendances` `/requests` は全員が使う。
 `/admin/*` のみロールで制限する。
 
+### 画面側の認証の扱い
+
+- **ログイン状態は `GET /api/auth/me` の結果だけで判定する**（TanStack Query でキャッシュ）。
+  localStorage などに別に持たない。Cookie の実際の状態（期限切れ・別タブでのログアウト）とずれるため
+- ログインが必要な画面は、**描画する前**（ルートの `beforeLoad`）に確認し、未ログインなら
+  `/login?redirect=<元のパス>` へ移す。中身が一瞬見えることはない
+- **戻り先（`?redirect=`）は自サイト内のパスだけを受け付ける**（オープンリダイレクト対策）。
+  ブラウザと同じ規則で URL として解釈し、オリジンが変わるものは捨てる
+- 使っている途中でどこかの API が 401 を返したら（セッション切れ）、1か所でまとめて拾い、
+  戻り先付きでログイン画面へ移す。ログインの失敗（これも 401）は対象外にする
+- **ログアウトに成功したら、キャッシュを丸ごと消す**。同じブラウザで次にログインした人に、
+  前の人のデータが見えないようにするため。失敗した場合は消さない（ログアウトしたつもりにさせない）
+- `/admin/*` の画面側のチェックは「見せない」ための UX。守りの本体は API 側の `requireRole('admin')`
+- API の 401 / 403 は RPC の型に現れないため、`hono/client` の `parseResponse` で
+  「2xx 以外は例外」に揃えてから扱う
+
 ## 認証・セッション
 
 - ログイン成功時にランダムトークンを生成し、Cookie `sid` で返す
@@ -417,7 +434,8 @@ web 側はステータスを `number` として受けてから分岐すること
 |---|---|
 | `packages/shared` | 状態機械・集計ロジックを純粋関数として Vitest でテスト |
 | `apps/api` | `hono/testing` でハンドラを直接叩く。テスト開始時にテスト用 DB（名前は `_test` で終わる）を作り直してマイグレーションを流し、各テストの前に全テーブルを TRUNCATE する。DB を使うテストはファイル間で直列に実行する |
-| `apps/web` | Testing Library + jsdom。API のモックは MSW（STEP 05 で導入）。MSW のハンドラは API の型で縛る |
+| `apps/web` | Testing Library + jsdom + MSW。ルーター・認証ガードを含めたアプリ全体を描画して、画面をまたぐ振る舞いを確かめる。MSW のハンドラは API の型で縛り、用意していないリクエストはテストを失敗させる |
+| E2E | Playwright（STEP 05b で導入）。実際のブラウザ・API・DB を通しで確かめる |
 | CI | GitHub Actions で lint / typecheck / test |
 
 ## 未決事項

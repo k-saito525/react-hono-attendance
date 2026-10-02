@@ -28,8 +28,12 @@ react-hono-attendance/
 ├── apps/web/
 │   ├── package.json          web の依存とスクリプト
 │   ├── tsconfig.json         base + ブラウザ環境 + JSX の設定
-│   ├── vite.config.ts        開発サーバ・ビルド・proxy
-│   └── vitest.config.ts      vite.config.ts + jsdom
+│   ├── vite.config.ts        開発サーバ・ビルド・proxy・ルーター/Tailwind のプラグイン
+│   ├── vitest.config.ts      vite.config.ts + jsdom
+│   └── src/
+│       ├── styles.css        Tailwind CSS の読み込み（1行だけ）
+│       ├── routes/           画面のルート定義。ファイルの置き場所がそのまま URL になる
+│       └── routeTree.gen.ts  routes/ から自動生成される型付きのルート一覧（手で編集しない）
 └── packages/shared/
     ├── package.json          shared の依存
     ├── tsconfig.json         base をそのまま継承
@@ -50,6 +54,8 @@ react-hono-attendance/
 | テストの接続先 DB | `.env` の `TEST_DATABASE_URL`（名前は `_test` で終わること）。CI は `ci.yml` の `env` |
 | テストの環境（Node / jsdom など） | 各パッケージの `vitest.config.ts` |
 | CI で走らせる内容 | `.github/workflows/ci.yml` の `steps` |
+| 画面を追加したい | `apps/web/src/routes/` にファイルを置く（`routeTree.gen.ts` は自動で更新される） |
+| 見た目を変えたい | 各コンポーネントの `className`（Tailwind のクラス）。全体の土台は `src/styles.css` |
 
 ## ルートの `package.json`
 
@@ -189,8 +195,11 @@ ESLint + Prettier なら設定が2つに分かれるところ。
 ### 生成物は対象から外す
 
 ```json
-"files": { "includes": ["**", "!apps/api/drizzle"] }
+"files": { "includes": ["**", "!apps/api/drizzle", "!apps/web/src/routeTree.gen.ts"] }
 ```
+
+`apps/web/src/routeTree.gen.ts` は TanStack Router のプラグインが生成するルート一覧で、
+内部で `any` を使うため Biome に指摘される。
 
 `apps/api/drizzle/` は drizzle-kit が生成するマイグレーションで、Biome の書式とは合わない。
 整形してしまうと `db:generate` のたびに差分が出て揉めるため、対象外にしている。
@@ -224,6 +233,50 @@ web（`:5173`）に来た `/api` へのリクエストを api（`:3000`）へ転
 別オリジンのままだと `SameSite=Lax` の Cookie が送信されず、
 CORS 設定と CSRF トークンが芋づる式に必要になる。
 詳細は [spec.md の「オリジン方針」](spec.md) を参照。
+
+### プラグイン（STEP 05 で追加）
+
+```ts
+plugins: [
+  tanstackRouter({ target: 'react', autoCodeSplitting: true }),
+  react(),
+  tailwindcss(),
+]
+```
+
+| プラグイン | 役割 |
+|---|---|
+| `tanstackRouter` | `src/routes/` のファイル構成から `src/routeTree.gen.ts` を生成する。**`react()` より前に置く**（生成物を React 側が読むため）。`autoCodeSplitting` で画面ごとにファイルを分け、開いた画面の分だけ読み込む |
+| `tailwindcss` | Tailwind CSS v4。**設定ファイル（`tailwind.config.js`）は不要**で、`src/styles.css` の `@import "tailwindcss";` だけで有効になる。使われているクラスだけが CSS に出力される |
+
+## `apps/web/src/routeTree.gen.ts`（自動生成）
+
+TanStack Router のプラグインが `src/routes/` から生成する、型付きのルート一覧。
+これがあるので、存在しないパスへの `navigate({ to: '/admn' })` はコンパイルエラーになる。
+
+- **手で編集しない**。`pnpm dev` / `pnpm build` / テストの実行時に自動で更新される
+- **コミットする**。CI は test より先に typecheck を走らせるので、
+  コミットしていないと typecheck の時点で「ファイルが無い」になる
+- Biome の対象から外している（内部で `any` を使うため）
+
+生成の途中で `apps/web/.tanstack/` に一時ファイルが置かれる。これは `.gitignore` 済み。
+
+## web のテスト（`apps/web/src/test/`）
+
+| ファイル | 役割 |
+|---|---|
+| `setup.ts` | MSW の起動、jest-dom のマッチャー、テストごとの片付け |
+| `server.ts` | MSW のモックサーバ。既定のハンドラは持たせない |
+| `handlers.ts` | API ごとのモック。**レスポンスの型を API のルート定義から借りる**ので、API の形が変わるとここがコンパイルエラーになる |
+| `render.tsx` | 本番と同じ `createApp()` でアプリ全体を描画する。履歴だけメモリ上のものに差し替える |
+
+```ts
+server.listen({ onUnhandledFrame: 'error' })
+```
+
+**ハンドラを用意していないリクエストはテストを失敗させる。**
+黙って素通りさせると、「モックしたつもりの API を実は呼んでいない」ことに気づけない。
+MSW v3 で `onUnhandledRequest` から `onUnhandledFrame` に改名された（v2 の書き方は効かない）。
 
 ## `docker-compose.yml`
 
@@ -419,3 +472,8 @@ Claude Code の権限とフック。詳細は
 | actions/checkout / setup-node | v7 / v7 | STEP 03 |
 | pnpm/action-setup | v6 | STEP 03 |
 | @hono/zod-validator | 0.9.1 | STEP 04 |
+| TanStack Router / router-plugin | 1.170.41 / 1.168.42 | STEP 05 |
+| TanStack Query | 5.104.0 | STEP 05 |
+| react-hook-form / @hookform/resolvers | 7.89.0 / 5.9.1 | STEP 05 |
+| Tailwind CSS | 4.3.3 | STEP 05 |
+| MSW | 3.0.1 | STEP 05 |

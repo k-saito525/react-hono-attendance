@@ -26,7 +26,8 @@
 | 03 | テスト基盤。Vitest / `hono/testing` / テスト用 DB の作り直し / GitHub Actions の骨組み | 完了 | [log](logs/step-03-test-foundation.md) |
 | 04 | 認証 API。セッション発行・検証、`login` / `logout` / `me`、`requireAuth` ミドルウェア | 完了 | [log](logs/step-04-auth-api.md) |
 | 04b | ログイン試行回数の制限（ブルートフォース対策）。数える単位と保存先を決める。STEP 05 の後でもよい | 未着手 | |
-| 05 | ログイン画面。ルーティング / TanStack Query / RPC クライアント / 認証ガード | 未着手 | |
+| 05 | ログイン画面。ルーティング / TanStack Query / RPC クライアント / 認証ガード | 完了 | [log](logs/step-05-login-screen.md) |
+| 05b | E2E テスト基盤。Playwright で実際のブラウザ・API・DB を通して確かめる。CI でも実行する | 未着手 | |
 | 06 | 状態機械を `packages/shared` に実装。純粋関数 + テスト | 未着手 | |
 | 07 | 打刻 API。`POST /api/time-entries`、状態遷移バリデーション、二重打刻防止 | 未着手 | |
 | 08 | 打刻画面。現在の状態表示、遷移可能なボタンのみ出す、未完了勤務の警告 | 未着手 | |
